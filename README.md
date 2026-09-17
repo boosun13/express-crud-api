@@ -17,31 +17,37 @@ Express + Zod + Prisma(SQLite) + Vitest/supertest で作る、学習用のシン
 
 **TODO → 予約** の 2 段階で進める。
 
-- **Phase 1: TODO**：単純な CRUD で全体の流れをつかむ
-- **Phase 2: 予約（Reservation）**：日時の検証、重複予約の禁止、リレーションなどの業務ルールを練習する
+- **TODO**：単純な CRUD で全体の流れをつかむ
+- **予約（Reservation）**：日時の検証、重複予約の禁止、リレーションなどの業務ルールを練習する
 
-## ディレクトリ構成
+## ディレクトリ構成（完成時）
 
 ```
 src/
   app.ts              # Express アプリの組み立て（listen しない → テストで使える）
   server.ts           # app.listen() だけ
-  lib/prisma.ts       # PrismaClient のシングルトン
+  errors.ts           # NotFoundError / ConflictError
+  lib/prisma.ts       # PrismaClient
   middlewares/
-    validate.ts       # Zod スキーマで body/params/query を検証
     errorHandler.ts   # エラーを共通の JSON 形式に変換
   modules/
     todos/
-      todo.schema.ts      # Zod スキーマ＋型（z.infer）
-      todo.service.ts     # Prisma を使う処理
-      todo.controller.ts  # req/res の処理
-      todo.routes.ts
-    reservations/ ...     # 同じ構成
+      todo.schema.ts  # Zod スキーマ＋型（z.infer）
+      todo.service.ts # Prisma を使う処理
+      todo.routes.ts  # リクエストを受けて service を呼ぶ
+    rooms/ ...        # 同じ構成
+    reservations/ ... # 同じ構成
 prisma/
   schema.prisma
+  migrations/
+generated/prisma/     # prisma generate で作られる（Git には入れない）
 tests/
-  setup.ts            # テスト用 DB の初期化
+  globalSetup.ts      # テスト用 DB の作り直し
+  health.test.ts
   todos.test.ts
+prisma7.config.ts     # Prisma CLI の設定
+vitest.config.ts
+requests.http         # REST Client で手動確認する用
 ```
 
 `app.ts` と `server.ts` を分けておくと、supertest に `app` をそのまま渡せる。
@@ -58,7 +64,7 @@ model Todo {
   updatedAt DateTime  @updatedAt
 }
 
-// Phase 2
+// 予約
 model Room {
   id           Int           @id @default(autoincrement())
   name         String        @unique
@@ -88,7 +94,7 @@ model Reservation {
 | PATCH | `/todos/:id` | 部分更新 | 200 |
 | DELETE | `/todos/:id` | 削除 | 204 |
 
-### 予約（Phase 2）
+### 予約
 
 `/rooms` と `/reservations` を TODO と同じ形で追加する。
 
@@ -101,7 +107,8 @@ model Reservation {
 ## バリデーションとエラー処理
 
 - Zod でスキーマを 1 つ定義し、そこから**入力の検証**と **TypeScript の型**（`z.infer`）の両方を作る
-- `validate({ body, params, query })` ミドルウェアで検証する。`params.id` は `z.coerce.number()` で数値に変換する
+- ハンドラの中で `schema.parse(req.body)` のように検証する。`params.id` は `z.coerce.number()` で数値に変換する
+  - 同じような検証コードが増えてきたら、`validate` ミドルウェアにまとめる
 - エラーのレスポンス形式を統一する
 
   ```json
@@ -120,7 +127,7 @@ model Reservation {
 
 - 環境変数でテスト用 DB を分ける：`DATABASE_URL="file:./test.db"`
 - DB の準備
-  - 全テストの前（`globalSetup`）：`prisma migrate reset --force`（または `prisma db push`）
+  - 全テストの前（`globalSetup`）：`prisma migrate reset --force`
   - 各テストの前（`beforeEach`）：`deleteMany` でテーブルを空にする
 - 並列実行で DB が競合しないよう、Vitest はファイル単位で直列にする（`fileParallelism: false`）
 - テストの観点
@@ -131,9 +138,10 @@ model Reservation {
 
 細かい手順と使用バージョンは [PLAN.md](./PLAN.md) を参照。
 
-1. [ ] プロジェクト作成（`tsx`、`typescript`、`express`、`zod`、`prisma`、`vitest`、`supertest`）
-2. [ ] Prisma の初期設定と TODO モデルのマイグレーション
-3. [ ] `app.ts`、エラーハンドラ、validate ミドルウェアを作る
-4. [ ] TODO の CRUD とテスト
-5. [ ] 予約機能（Room / Reservation）とルールのテスト
-6. [ ] 発展：ページング、OpenAPI 生成（`zod-to-openapi`）、簡単なフロント画面
+0. [x] 環境準備（mise で Node 24、Git、VS Code）
+1. [ ] Express を最小構成で動かす（`/health`）
+2. [ ] テストを書けるようにする（Vitest + supertest）
+3. [ ] DB を用意する（Prisma + SQLite）
+4. [ ] TODO API（CRUD・エラー処理・テスト）
+5. [ ] 予約 API（重複予約の禁止など）
+6. [ ] 発展：ページング、OpenAPI、CI など

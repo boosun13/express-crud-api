@@ -4,4 +4,4 @@ coverage/
 .env
 *.db
 *.db-journal
-src/generated/
+generated/

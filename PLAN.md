@@ -1,27 +1,37 @@
 # 実装プラン
 
-[README.md](./README.md) の構想を、上から順番に実行できる手順に分けたもの。
-各ステップの最後に **✅ 確認** があるので、そこで動作を確かめてから次へ進む。
+[README.md](./README.md) の構想を、**人間が手作業で進める**想定で手順に分けたもの。
+
+進め方の方針：
+
+- **小さく動かす → 確かめる → 必要になったものを足す**
+- パッケージや設定は最初に全部そろえず、**使う段階で入れる**
+- パッケージは基本的に**バージョンを指定せずに入れる**（入ったバージョンは `package-lock.json` に記録される）
+- 各 Phase の最後にコミットする
 
 ---
 
-## 使用バージョン（2026-09-17 時点）
+## バージョンについて（2026-09-17 時点）
 
-| 種類 | パッケージ | バージョン | 備考 |
-|---|---|---|---|
-| ランタイム | Node.js | **24.x LTS**（24.21.0） | 現在のLTS。26 はまだLTSになっていない |
-| 言語 | typescript | 7.0.2 | |
-| 実行 | tsx | 4.23.13 | TS をビルドせずに実行する |
-| Web | express | 5.2.1 | |
-| 型 | @types/express | 5.0.6 | |
-| 型 | @types/node | 24.13.5 | Node 24 に合わせる |
-| 検証 | zod | 4.6.5 | |
-| ORM | prisma / @prisma/client | 7.10.0 | npm の `latest` は 8.0.0-rc（リリース候補版）なので、安定版の 7.10.0 を使う |
-| SQLite | @prisma/adapter-better-sqlite3 | 7.10.0 | Prisma 7 では DB ドライバのアダプタが必須 |
-| テスト | vitest | 5.0.1 | |
-| テスト | supertest / @types/supertest | 7.2.2 / 7.2.1 | |
+基本は `npm i <パッケージ名>` で最新を入れればよい。ただし次の 2 つだけは**指定が必要**。
 
-> Prisma 7 と Vitest 5 は Node 22.12 以上が必要。この PC は元々 v20.8.1 だったので、Step 0-1 で 24 LTS に上げた。
+| パッケージ | 入れ方 | 理由 |
+|---|---|---|
+| `@types/node` | `@types/node@24` | 指定しないと Node 24 と合わない版が入ることがある |
+| `prisma` / `@prisma/client` / `@prisma/adapter-better-sqlite3` | `@7` を付ける | npm の `latest` が 8.0.0-rc（リリース前の候補版）になっているため |
+
+参考：確認時点の最新安定版
+
+| パッケージ | バージョン |
+|---|---|
+| Node.js | 24.21.0（LTS） |
+| typescript | 7.0.2 |
+| tsx | 4.23.13 |
+| express / @types/express | 5.2.1 / 5.0.6 |
+| zod | 4.6.5 |
+| prisma 関連 | 7.10.0 |
+| vitest | 5.0.1 |
+| supertest / @types/supertest | 7.2.2 / 7.2.1 |
 
 ---
 
@@ -71,7 +81,7 @@
    .env
    *.db
    *.db-journal
-   src/generated/
+   generated/
    ```
 3. ✅ 確認：`git status` で `node_modules` などが表示されない
 
@@ -92,261 +102,415 @@
    - 保存時に整形（`.prisma` は Prisma 拡張、それ以外は Prettier）
    - 改行コードを LF にそろえる
    - 自動 import で `.js` 拡張子を付ける（ESM のため）
-   - `node_modules`・`dist`・`src/generated` を検索から外す
+   - `node_modules`・`dist`・`generated` を検索から外す
 3. `.gitattributes` で Git 上の改行コードも LF にそろえる
 4. ✅ 確認：`code --list-extensions` に上の 7 つが表示されること
 
 ---
 
-## Phase 1：プロジェクトの土台
+## Phase 1：Express を最小構成で動かす
+
+ゴール：`http://localhost:3000/health` にアクセスすると `{"status":"ok"}` が返る。
 
 ### Step 1-1. package.json を作る
-1. `npm init -y`
-2. `package.json` に次を追加する
-   - `"type": "module"`（ESM で書く）
-   - `"engines": { "node": ">=24" }`
-3. ✅ 確認：`package.json` が作られている
-
-### Step 1-2. パッケージをインストールする（バージョン固定）
 ```powershell
-npm i express@5.2.1 zod@4.6.5 @prisma/client@7.10.0 @prisma/adapter-better-sqlite3@7.10.0
-npm i -D typescript@7.0.2 tsx@4.23.13 prisma@7.10.0 vitest@5.0.1 supertest@7.2.2 @types/express@5.0.6 @types/node@24.13.5 @types/supertest@7.2.1
+node -v        # v24.21.0 と出ることを確認（違ったら VS Code を開き直す）
+npm init -y
 ```
-✅ 確認：`npm ls --depth=0` でエラーが出ない
+できた `package.json` を開き、`"type": "module"` を 1 行足す（ESM で書くため）。
+```json
+{
+  "name": "express-crud-api",
+  "version": "1.0.0",
+  "type": "module",
+  ...
+}
+```
+✅ 確認：`package.json` ができている
 
-### Step 1-3. TypeScript の設定
-1. `tsconfig.json` を作り、主に次を設定する
-   - `"target": "ES2024"`
-   - `"module": "NodeNext"`、`"moduleResolution": "NodeNext"`
-   - `"strict": true`
-   - `"outDir": "dist"`、`"rootDir": "."`
-   - `"include": ["src", "tests", "prisma.config.ts", "vitest.config.ts"]`
-2. ✅ 確認：`npx tsc --noEmit` がエラーなしで終わる（ファイルがまだない警告は無視してよい）
+### Step 1-2. Express と TypeScript を入れる
+```powershell
+npm i express
+npm i -D typescript tsx @types/express @types/node@24
+```
+✅ 確認：`node_modules/` と `package-lock.json` ができている
 
-### Step 1-4. npm scripts を追加する
-| script | コマンド | 用途 |
-|---|---|---|
-| `dev` | `tsx watch src/server.ts` | 開発サーバー（保存で再起動） |
-| `build` | `tsc` | ビルド |
-| `start` | `node dist/src/server.js` | ビルド後の起動 |
-| `typecheck` | `tsc --noEmit` | 型チェックだけ |
-| `test` | `vitest run` | テストを 1 回実行 |
-| `test:watch` | `vitest` | テストを監視実行 |
-| `db:migrate` | `prisma migrate dev` | マイグレーション作成と適用 |
-| `db:studio` | `prisma studio` | DB を GUI で見る |
+### Step 1-3. tsconfig.json を作る
+```powershell
+npx tsc --init
+```
+雛形ができるので、開いて**次のところを直す**。それ以外はそのままでよい。
 
-✅ 確認：`npm run` で一覧が表示される
+| 項目 | 雛形の値 | 直す値 | 理由 |
+|---|---|---|---|
+| `types` | `[]` | `["node"]` | `process` などの Node の型を使うため |
+| `outDir`（コメントアウトされている） | — | `"dist"` を有効にする | ビルド結果の置き場所 |
+| `jsx` | `"react-jsx"` | 行ごと削除 | React は使わない |
+| `declaration` / `declarationMap` | `true` | 行ごと削除 | ライブラリではないので型定義ファイルは不要（残すと `app` の型でエラーが出ることがある） |
+| `exactOptionalPropertyTypes` | `true` | 行ごと削除 | Zod や Prisma の任意項目と相性が悪く、最初は混乱しやすい |
+
+`module: "nodenext"` と `strict: true` は雛形で最初から入っている。
+
+✅ 確認：`npx tsc --noEmit` で `No inputs were found` と出る（まだ `.ts` がないので正常）
+
+### Step 1-4. アプリを書く
+`src/app.ts`（アプリの組み立て。**listen はしない**）
+```ts
+import express from "express";
+
+export const app = express();
+app.use(express.json());
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+```
+
+`src/server.ts`（起動するだけ）
+```ts
+import { app } from "./app.js";
+
+const port = Number(process.env.PORT ?? 3000);
+app.listen(port, () => {
+  console.log(`http://localhost:${port}`);
+});
+```
+> import のパスは `./app.ts` ではなく **`./app.js`** と書く（`nodenext` のルール）。
+
+### Step 1-5. 起動スクリプトを足して動かす
+`package.json` の `"scripts"` に `dev` を足す。
+```json
+"scripts": {
+  "dev": "tsx watch src/server.ts"
+}
+```
+```powershell
+npm run dev
+```
+✅ 確認：別のターミナルで
+```powershell
+curl.exe http://localhost:3000/health
+```
+→ `{"status":"ok"}` が返る。`app.ts` を書き換えて保存すると自動で再起動する。
+
+### Step 1-6. コミット
+```powershell
+git add .
+git commit -m "feat: minimal express server"
+```
 
 ---
 
-## Phase 2：Express の最小構成
+## Phase 2：テストを書けるようにする
 
-### Step 2-1. `src/app.ts` を作る
-1. `express()` でアプリを作る
-2. `app.use(express.json())` を入れる
-3. 動作確認用に `GET /health` → `{ "status": "ok" }` を追加
-4. `app` を `export` する（**ここでは listen しない**）
+ゴール：`npm test` で `/health` のテストが通る。
 
-### Step 2-2. `src/server.ts` を作る
-1. `app` を import して `app.listen(3000)` するだけ
-2. ポートは `process.env.PORT ?? 3000`
+### Step 2-1. Vitest と supertest を入れる
+```powershell
+npm i -D vitest supertest @types/supertest
+```
 
-### Step 2-3. 動かす
-1. `npm run dev`
-2. ✅ 確認：別ターミナルで
+### Step 2-2. テストを書く
+`tests/health.test.ts`
+```ts
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { app } from "../src/app.js";
+
+describe("GET /health", () => {
+  it("200 と status: ok を返す", async () => {
+    const res = await request(app).get("/health");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok" });
+  });
+});
+```
+> `app.ts` で listen していないので、サーバーを起動しなくてもテストできる。
+
+### Step 2-3. スクリプトを足して実行
+```json
+"scripts": {
+  "dev": "tsx watch src/server.ts",
+  "test": "vitest run",
+  "test:watch": "vitest"
+}
+```
+```powershell
+npm test
+```
+✅ 確認：`1 passed` と出る。VS Code の左のテスト（フラスコ）アイコンからも実行できる
+
+### Step 2-4. コミット
+```powershell
+git add .
+git commit -m "test: add health check test"
+```
+
+---
+
+## Phase 3：DB（Prisma + SQLite）を用意する
+
+ゴール：Todo テーブルができて、Prisma Studio で中身が見える。
+
+### Step 3-1. Prisma を入れて初期化
+```powershell
+npm i @prisma/client@7 @prisma/adapter-better-sqlite3@7 dotenv
+npm i -D prisma@7
+npx prisma init --datasource-provider sqlite
+```
+作られるもの：
+
+| ファイル | 中身 |
+|---|---|
+| `prisma/schema.prisma` | テーブル定義を書くファイル |
+| `prisma7.config.ts` | Prisma CLI の設定（DB の場所など） |
+| `.env` | `DATABASE_URL="file:./dev.db"` |
+| `.gitignore` | `/generated/prisma` などが追記される |
+
+> ⚠️ `prisma init` は **`.claude/skills/`・`.windsurf/skills/`・`.agents/skills/`・`skills-lock.json`**（AI ツール向けのファイル）も作る。使わないなら削除してよい。
+
+✅ 確認：上のファイルができている
+
+### Step 3-2. Todo モデルを書く
+`prisma/schema.prisma` の末尾に足す。
+```prisma
+model Todo {
+  id        Int       @id @default(autoincrement())
+  title     String
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+```
+
+### Step 3-3. マイグレーションしてクライアントを作る
+```powershell
+npx prisma migrate dev --name init_todo
+npx prisma generate
+```
+> Prisma 7 は `migrate dev` だけではクライアントを作り直さないので、`generate` も実行する。
+
+✅ 確認
+- `prisma/migrations/` にフォルダができている
+- `generated/prisma/` ができている
+- `npx prisma studio` でブラウザが開き、Todo テーブルが見える（または VS Code で `dev.db` をクリック）
+
+### Step 3-4. アプリから使う PrismaClient を作る
+`src/lib/prisma.ts`
+```ts
+import "dotenv/config";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "../../generated/prisma/client.js";
+
+const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! });
+export const prisma = new PrismaClient({ adapter });
+```
+> Prisma 7 は DB につなぐ**アダプタを渡すのが必須**。
+
+### Step 3-5. スクリプトを足してコミット
+```json
+"db:migrate": "prisma migrate dev",
+"db:generate": "prisma generate",
+"db:studio": "prisma studio"
+```
+```powershell
+git add .
+git commit -m "chore: set up prisma with sqlite"
+```
+✅ 確認：`git status` で `dev.db` と `.env` がコミット対象に**入っていない**
+
+---
+
+## Phase 4：TODO API を作る
+
+ゴール：TODO の作成・一覧・取得・更新・削除が API でできて、テストが通る。
+
+最初は `routes` のファイルに直接書き、動いてから整理する。
+
+### Step 4-1. テスト用の DB を分ける
+テストで開発用の `dev.db` を消さないように、テスト用の DB を使う。
+
+`vitest.config.ts`
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    env: { DATABASE_URL: "file:./test.db" },
+    globalSetup: "./tests/globalSetup.ts",
+    fileParallelism: false,
+  },
+});
+```
+
+`tests/globalSetup.ts`（テスト開始前に一度だけ、テスト用 DB を作り直す）
+```ts
+import { execSync } from "node:child_process";
+
+export default function setup() {
+  execSync("npx prisma migrate reset --force", {
+    env: { ...process.env, DATABASE_URL: "file:./test.db" },
+    stdio: "inherit",
+  });
+}
+```
+✅ 確認：`npm test` で `test.db` が作られ、`/health` のテストが通ったまま
+
+### Step 4-2. POST /todos（作成）
+1. **Zod を入れる**
    ```powershell
-   curl.exe http://localhost:3000/health
+   npm i zod
    ```
-   → `{"status":"ok"}`
+2. `src/modules/todos/todo.schema.ts` に作成用のスキーマを書く（`title` は 1〜100 文字、`dueDate` は任意）
+3. `src/modules/todos/todo.routes.ts` に `POST /` を書く
+   - `createTodoSchema.parse(req.body)` で検証 → `prisma.todo.create()` → `res.status(201).json(todo)`
+4. `app.ts` に `app.use("/todos", todoRouter)` を足す
+5. 手で試す：`requests.http`（REST Client）を作って送る
+   ```http
+   POST http://localhost:3000/todos
+   Content-Type: application/json
 
----
-
-## Phase 3：テスト環境（先に作っておく）
-
-### Step 3-1. `vitest.config.ts` を作る
-- `test.environment: "node"`
-- `test.fileParallelism: false`（SQLite の競合を防ぐ）
-- `test.globalSetup: "./tests/globalSetup.ts"`（Phase 4 で使う）
-- `test.env: { DATABASE_URL: "file:./test.db" }`
-
-### Step 3-2. 最初のテストを書く
-1. `tests/health.test.ts` を作る
-2. `supertest(app).get("/health")` が 200 と `{ status: "ok" }` を返すことを確認
-3. ✅ 確認：`npm test` が緑（1 passed）
-
----
-
-## Phase 4：Prisma と SQLite
-
-### Step 4-1. Prisma を初期化する
-1. `npx prisma init --datasource-provider sqlite`
-2. できるもの：`prisma/schema.prisma`、`prisma.config.ts`、`.env`
-3. `.env` を `DATABASE_URL="file:./dev.db"` にする
-
-### Step 4-2. schema.prisma を書く
-1. generator を Prisma 7 の形にする
-   ```prisma
-   generator client {
-     provider = "prisma-client"
-     output   = "../src/generated/prisma"
-   }
+   { "title": "牛乳を買う" }
    ```
-2. `Todo` モデルを追加する（README の「データモデル」参照）
+✅ 確認：201 と作成された TODO が返る
 
-### Step 4-3. マイグレーションする
-1. `npm run db:migrate -- --name init_todo`
-2. `npx prisma generate`（Prisma 7 は migrate 時に自動生成されないので明示的に実行する）
-3. ✅ 確認
-   - `prisma/migrations/` にフォルダができている
-   - `src/generated/prisma/` にクライアントができている
-   - `npm run db:studio` で Todo テーブルが見える
+### Step 4-3. エラーを JSON で返すようにする
+Step 4-2 で `title` を空にして送ると、**500 と HTML のエラー画面**が返る。ここでエラー処理を作る。
 
-### Step 4-4. `src/lib/prisma.ts` を作る
-1. `PrismaBetterSqlite3` アダプタを `DATABASE_URL` で作る
-2. `new PrismaClient({ adapter })` を 1 つだけ作って export する（シングルトン）
+1. `src/middlewares/errorHandler.ts` を作る
+   - `ZodError` → 400、`{ error: { code: "VALIDATION_ERROR", message, details } }`
+   - それ以外 → 500、`{ error: { code: "INTERNAL_ERROR", message } }`
+2. `app.ts` の**一番最後**に `app.use(errorHandler)` を置く
 
-### Step 4-5. テスト用 DB の準備
-1. `tests/globalSetup.ts`：全テストの前に `prisma migrate reset --force` を `DATABASE_URL=file:./test.db` で実行する
-2. `tests/helpers/resetDb.ts`：`prisma.todo.deleteMany()` を呼ぶ関数を作る
-3. ✅ 確認：`npm test` を実行すると `test.db` が作られ、テストは緑のまま
+> Express 5 では、async ハンドラの中で throw したエラーも自動でここに届く。`try/catch` は要らない。
 
----
+✅ 確認：`title` を空にして送ると 400 と JSON が返る
 
-## Phase 5：共通部品（エラー処理と検証）
+### Step 4-4. テストを書く
+`tests/todos.test.ts`
+- 正しい入力 → 201、`id` がある
+- `title` が空 → 400
 
-### Step 5-1. 独自エラークラス
-`src/errors.ts` に作る
-- `AppError`（`status`、`code` を持つ基底クラス）
-- `NotFoundError`（404 / `NOT_FOUND`）
-- `ConflictError`（409 / `CONFLICT`）
+`tests` の中で毎回 DB を空にする：`beforeEach(() => prisma.todo.deleteMany())`
 
-### Step 5-2. `middlewares/errorHandler.ts`
-1. `ZodError` → 400 / `VALIDATION_ERROR`（`details` に `error.issues`）
-2. `AppError` → その `status` と `code`
-3. それ以外 → 500 / `INTERNAL_ERROR`（ログを出す）
-4. `app.ts` の**一番最後**に `app.use(errorHandler)` を置く
+✅ 確認：`npm test` が通る
 
-> Express 5 では async ハンドラ内で throw したエラーも自動で errorHandler に届く。`try/catch` や `express-async-handler` は不要。
+### Step 4-5. GET /todos と GET /todos/:id
+1. 一覧：`prisma.todo.findMany({ orderBy: { createdAt: "desc" } })`
+   - `?done=true` で絞り込めるようにする（`req.query` を Zod で変換）
+2. 1 件取得：`id` を `z.coerce.number()` で数値にして `findUnique`
+3. 見つからないときのために `src/errors.ts` に `NotFoundError` を作り、`errorHandler` で 404 にする
+4. テストを足す
+   - 2 件作る → 一覧で 2 件
+   - 存在しない id → 404
+   - `abc` のような id → 400
 
-### Step 5-3. `middlewares/validate.ts`
-1. `validate({ body?, params?, query? })` の形で Zod スキーマを受け取る
-2. `schema.parse()` した結果を `req.body` などに入れ直す
-   - Express 5 では `req.query` が読み取り専用なので、`res.locals.query` など別の場所に入れる
-3. ✅ 確認：`/health` に適当なスキーマを一時的に付けて、間違った入力で 400 が返ることをテストで確認（確認後は消す）
+✅ 確認：`npm test` が通る
 
----
+### Step 4-6. PATCH /todos/:id と DELETE /todos/:id
+1. 更新：作成用スキーマの `.partial()` に `done` を足したスキーマで検証
+2. 削除：成功したら 204
+3. どちらも、存在しない id なら 404
+4. テストを足す
+   - `{ done: true }` で更新できる
+   - 削除後に GET すると 404
 
-## Phase 6：TODO API（1 機能ずつ「テスト → 実装」）
+✅ 確認：`npm test` が通る。`requests.http` から手でも一通り試す
 
-各 Step は **① テストを書く → ② 失敗を確認 → ③ 実装 → ④ 緑になるのを確認** の順で進める。
+### Step 4-7. 整理する（リファクタリング）
+`todo.routes.ts` が長くなってきたら分ける。
+- `todo.service.ts`：Prisma を使う処理
+- `todo.routes.ts`：リクエストを受けて service を呼ぶだけにする
 
-### Step 6-1. スキーマを定義する（`todo.schema.ts`）
-- `createTodoSchema`：`title`（1〜100文字、必須）、`dueDate`（ISO 日時、任意）
-- `updateTodoSchema`：`createTodoSchema.partial()` ＋ `done`（boolean、任意）
-- `idParamSchema`：`{ id: z.coerce.number().int().positive() }`
-- `listQuerySchema`：`done`（`"true" | "false"` を boolean に変換、任意）
-- 型は `z.infer` で作る
+✅ 確認：**テストが通ったまま**であること（テストがあるので安心して整理できる）
 
-### Step 6-2. POST `/todos`（作成）
-- テスト
-  - 正しい入力 → 201、レスポンスに `id` がある
-  - `title` が空 → 400 / `VALIDATION_ERROR`
-- 実装：schema → service の `create` → controller → routes → `app.ts` に `app.use("/todos", todoRouter)`
-
-### Step 6-3. GET `/todos/:id`（1 件取得）
-- テスト
-  - 作成した id → 200
-  - 存在しない id → 404
-  - `abc` のような id → 400
-- 実装：`findUnique` で見つからなければ `NotFoundError` を throw
-
-### Step 6-4. GET `/todos`（一覧）
-- テスト
-  - 2 件作成 → 2 件返る
-  - `?done=true` → 完了のものだけ返る
-- 実装：`findMany({ where, orderBy: { createdAt: "desc" } })`
-
-### Step 6-5. PATCH `/todos/:id`（更新）
-- テスト
-  - `{ done: true }` → 200、`done` が true
-  - 存在しない id → 404
-  - 空の body `{}` → 400（何も更新しないのはエラーにする）
-
-### Step 6-6. DELETE `/todos/:id`（削除）
-- テスト
-  - 削除 → 204、その後 GET すると 404
-  - 存在しない id → 404
-
-### Step 6-7. 通しのテスト
-- 作成 → 一覧 → 更新 → 取得 → 削除 を 1 つのテストで流す
-- ✅ 確認
-  - `npm test` が全部緑
-  - `npm run typecheck` がエラーなし
-  - `npm run dev` で起動し、curl で手動でも一通り動く
-
-### Step 6-8. コミット
-`git commit -m "feat: TODO CRUD API"`
+### Step 4-8. 型チェックとコミット
+```json
+"typecheck": "tsc --noEmit"
+```
+```powershell
+npm run typecheck
+npm test
+git add .
+git commit -m "feat: TODO CRUD API"
+git push
+```
 
 ---
 
-## Phase 7：予約 API
+## Phase 5：予約 API を作る
 
-### Step 7-1. モデル追加とマイグレーション
-1. `Room` と `Reservation` を `schema.prisma` に追加
-2. `npm run db:migrate -- --name add_reservation` → `npx prisma generate`
-3. `resetDb` に `reservation.deleteMany()` → `room.deleteMany()` を追加（**子テーブルから先に**消す）
-4. ✅ 確認：`npm test` で既存の TODO テストが緑のまま
+ゴール：部屋ごとに予約ができ、時間が重なる予約は 409 で断られる。
 
-### Step 7-2. Room API
-- `POST /rooms`、`GET /rooms`、`GET /rooms/:id` を TODO と同じ手順で作る
-- `name` の重複 → 409（Prisma のエラーコード `P2002` を `ConflictError` に変換）
+### Step 5-1. モデルを足す
+`schema.prisma` に `Room` と `Reservation` を足す（README の「データモデル」参照）。
+```powershell
+npx prisma migrate dev --name add_reservation
+npx prisma generate
+```
+テストの `beforeEach` に `reservation.deleteMany()` → `room.deleteMany()` を足す（**子テーブルから先に**消す）。
 
-### Step 7-3. 予約のスキーマ
-- `roomId`、`guestName`、`startAt`、`endAt`
-- `.refine` で `startAt < endAt` をチェック
-- `.refine` で `startAt` が現在より未来かチェック
+✅ 確認：`npm test` で TODO のテストが通ったまま
 
-### Step 7-4. POST `/reservations`（ここが一番の山場）
-- テスト
-  - 正常 → 201
-  - `endAt <= startAt` → 400
-  - 過去の日時 → 400
-  - 存在しない `roomId` → 404
-  - **時間が重なる予約** → 409
-  - **ちょうど隣接する予約**（前の `endAt` = 次の `startAt`）→ 201（重なりではない）
-- 実装：重なりの条件は「`既存.startAt < 新.endAt` かつ `既存.endAt > 新.startAt`」
-  - 判定と作成は `prisma.$transaction` の中で行う
+### Step 5-2. Room API
+TODO と同じ作り方で `POST /rooms`・`GET /rooms`・`GET /rooms/:id` を作る。
+- 部屋の名前が重複したら 409（Prisma のエラーコード `P2002` を `ConflictError` にして返す）
 
-### Step 7-5. 残りの CRUD
+### Step 5-3. POST /reservations（一番の山場）
+1. スキーマ：`roomId`・`guestName`・`startAt`・`endAt`
+   - `.refine` で `startAt < endAt`
+   - `.refine` で `startAt` が未来
+2. 重なりの判定：同じ部屋に「`既存.startAt < 新.endAt` かつ `既存.endAt > 新.startAt`」の予約があれば 409
+3. 判定と作成は `prisma.$transaction` の中で行う
+4. テスト
+   - 正常 → 201
+   - `endAt <= startAt` → 400
+   - 過去の日時 → 400
+   - 存在しない部屋 → 404
+   - 時間が重なる → 409
+   - ちょうど隣り合う（前の終わり = 次の始まり）→ 201
+
+✅ 確認：`npm test` が通る
+
+### Step 5-4. 残りの API
 - `GET /reservations?roomId=1`、`GET /reservations/:id`、`DELETE /reservations/:id`
-- `PATCH /reservations/:id`：日時を変える場合は、**自分自身を除いて**重なりを判定する（テストも書く）
+- `PATCH /reservations/:id`：日時を変えるときは**自分自身を除いて**重なりを判定する
 
-### Step 7-6. 仕上げ
-- ✅ 確認：`npm test`、`npm run typecheck` がすべて通る
-- `git commit -m "feat: reservation API"`
+### Step 5-5. コミット
+```powershell
+npm run typecheck
+npm test
+git add .
+git commit -m "feat: reservation API"
+git push
+```
 
 ---
 
-## Phase 8：発展（任意）
+## Phase 6：発展（任意）
 
 好きなものから選ぶ。
 
-- [ ] ページング（`?page=1&limit=20`）とレスポンスへの `total` 追加
-- [ ] `zod-to-openapi` で OpenAPI を生成し、Swagger UI で表示
-- [ ] `vitest --coverage` でカバレッジを確認
-- [ ] ESLint / Prettier の導入
-- [ ] GitHub Actions で push のたびに `npm test` を実行
-- [ ] 簡単なフロント画面（素の HTML + fetch）
+- [ ] ページング（`?page=1&limit=20`）
+- [ ] 同じ検証コードが増えてきたら `validate` ミドルウェアにまとめる
+- [ ] OpenAPI を生成して Swagger UI で見る
+- [ ] ビルドして動かす（`build: tsc`、`start: node dist/src/server.js`）
+- [ ] ESLint / Prettier の設定
+- [ ] GitHub Actions で push のたびにテスト
 
 ---
 
-## 困ったときのチェックリスト
+## 困ったとき
 
 | 症状 | よくある原因 |
 |---|---|
-| `Cannot find module '../generated/prisma'` | `npx prisma generate` を実行していない |
-| `PrismaClient needs an adapter` | Prisma 7 はアダプタ必須。`src/lib/prisma.ts` を確認 |
-| テストが時々失敗する | テストが並列で動いている → `fileParallelism: false` を確認 |
-| テストで開発用のデータが消えた | `DATABASE_URL` がテスト用（`test.db`）になっていない |
-| `req.query` に代入するとエラー | Express 5 では読み取り専用。`res.locals` を使う |
-| import でエラー（ESM） | 相対 import に拡張子 `.js` が付いていない（`NodeNext` では必須） |
+| `node -v` が v20 のまま | VS Code・ターミナルを開き直していない |
+| `Cannot find module './app'` | import に `.js` を付けていない（`./app.js`） |
+| `Cannot find name 'process'` | `tsconfig.json` の `types` に `"node"` がない |
+| `Cannot find module '../../generated/prisma/client.js'` | `npx prisma generate` を実行していない |
+| `DATABASE_URL` が undefined | `import "dotenv/config"` を書いていない |
+| テストで開発用のデータが消えた | `vitest.config.ts` の `DATABASE_URL` が `test.db` になっていない |
+| テストが時々失敗する | `fileParallelism: false` を入れていない |
+| バリデーションエラーで 500 と HTML が返る | `errorHandler` がない、または `app.use` の最後に置いていない |
+| Prisma 8 の rc が入った | `@7` を付けずにインストールした |

@@ -1,0 +1,25 @@
+{
+  // 保存時に整形する
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[prisma]": {
+    "editor.defaultFormatter": "Prisma.prisma"
+  },
+
+  // 改行コードを LF にそろえる（.gitattributes と合わせる）
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+
+  // ESM（NodeNext）では相対 import に .js が必要なので、自動 import でも付ける
+  "typescript.preferences.importModuleSpecifierEnding": "js",
+  "typescript.updateImportsOnFileMove.enabled": "always",
+
+  // 自動生成されるファイルやビルド結果を検索対象から外す
+  "search.exclude": {
+    "**/node_modules": true,
+    "dist": true,
+    "coverage": true,
+    "src/generated": true
+  }
+}

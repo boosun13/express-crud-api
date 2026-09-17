@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "hverlin.mise-vscode",
+    "prisma.prisma",
+    "vitest.explorer",
+    "esbenp.prettier-vscode",
+    "usernamehw.errorlens",
+    "humao.rest-client",
+    "qwtel.sqlite-viewer"
+  ]
+}

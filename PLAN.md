@@ -75,6 +75,27 @@
    ```
 3. ✅ 確認：`git status` で `node_modules` などが表示されない
 
+### Step 0-3. VS Code を整える ✅
+1. 拡張機能を入れる（`.vscode/extensions.json` に「推奨」として登録済み。フォルダを開くと入れるよう案内が出る）
+
+   | 拡張機能 | ID | 何に使う？ |
+   |---|---|---|
+   | mise | `hverlin.mise-vscode` | mise の Node を VS Code でも使う |
+   | Prisma | `prisma.prisma` | `schema.prisma` の色付け・補完・整形 |
+   | Vitest | `vitest.explorer` | テストを画面から実行・デバッグ |
+   | Prettier | `esbenp.prettier-vscode` | 保存時にコードを整形 |
+   | Error Lens | `usernamehw.errorlens` | エラーをその行に直接表示 |
+   | REST Client | `humao.rest-client` | `.http` ファイルから API を手動で叩く |
+   | SQLite Viewer | `qwtel.sqlite-viewer` | `dev.db` の中身を見る |
+
+2. `.vscode/settings.json` でプロジェクト用の設定をする
+   - 保存時に整形（`.prisma` は Prisma 拡張、それ以外は Prettier）
+   - 改行コードを LF にそろえる
+   - 自動 import で `.js` 拡張子を付ける（ESM のため）
+   - `node_modules`・`dist`・`src/generated` を検索から外す
+3. `.gitattributes` で Git 上の改行コードも LF にそろえる
+4. ✅ 確認：`code --list-extensions` に上の 7 つが表示されること
+
 ---
 
 ## Phase 1：プロジェクトの土台
